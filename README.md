@@ -86,6 +86,7 @@ A minimal Colab notebook is available at `notebooks/colab_minimal.ipynb`.
 - It auto-selects a safe runtime profile based on detected GPU memory
 - It is designed for single-text `text-in / text-out` runs
 - It uses conservative defaults for T4 / L4 / A100-class runtimes
+- It currently defaults to `Qwen2.5` text-only checkpoints because the local paraphraser path assumes a causal LM and does not support the official `Qwen3.5` conditional-generation checkpoints
 
 The notebook expects the patched Colab-friendly version of this repository. If you want to open it from GitHub in Colab, push this branch to your own fork first and update `REPO_URL` / `REPO_REF` in the notebook.
 

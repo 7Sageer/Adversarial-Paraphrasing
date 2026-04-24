@@ -4,7 +4,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
-from transformers import AutoModelForCausalLM, AutoModelForSequenceClassification, AutoTokenizer
+from transformers import AutoConfig, AutoModelForCausalLM, AutoModelForSequenceClassification, AutoTokenizer
 
 from MAGE.deployment import preprocess
 from runtime_utils import resolve_runtime_device, resolve_torch_dtype, save_jsonl
@@ -34,6 +34,15 @@ def _load_sequence_classifier(model_dir: str, device: str):
 
 
 def _load_causal_lm(model_name: str, device: str, precision: str):
+    config = AutoConfig.from_pretrained(model_name)
+    if getattr(config, "model_type", None) == "qwen3_5":
+        raise ValueError(
+            "Qwen3.5 checkpoints are not supported by this local paraphraser path. "
+            "The current implementation assumes a text-only causal LM, but the official "
+            "Qwen3.5 checkpoints use the qwen3_5 conditional-generation stack with a vision encoder. "
+            "Use a text-only causal LM such as Qwen2.5 here, or serve Qwen3.5 behind an API/vLLM layer."
+        )
+
     torch_dtype = resolve_torch_dtype(device, precision)
     model_kwargs = {"torch_dtype": torch_dtype}
     if device == "cuda":
