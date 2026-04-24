@@ -42,6 +42,53 @@ We recommend creating a separate virtual or conda environment with python>=3.10,
 pip install -r requirements.txt
 ```
 
+For local Apple Silicon testing, the full server snapshot in `requirements.txt` is heavier than necessary. The minimal local path is:
+
+```bash
+pip install torch transformers datasets tqdm clean-text sentencepiece scipy
+```
+
+## 💻 Local Apple Silicon Notes
+
+The original codebase assumes a CUDA machine and large local models. This repository now includes a simplified local path that keeps the same script structure but is friendlier to Apple Silicon:
+
+- `--device auto` resolves to `cuda`, `mps`, or `cpu`
+- the default paraphraser is now `Qwen/Qwen2.5-0.5B-Instruct`
+- the default local detector is now `openai_roberta_base`
+- watermark detection still requires a compatible tokenizer path and is not the recommended first-run target on a laptop
+
+The fastest smoke test is a single local paraphrase:
+
+```bash
+python paraphrase_and_detect.py \
+  --input_text "Large language models can generate fluent text quickly, but detectors often look for statistical regularities." \
+  --device auto \
+  --adversarial 0
+```
+
+If you want lightweight detector-guided paraphrasing on a laptop, start with:
+
+```bash
+python paraphrase_and_detect.py \
+  --input_text "Large language models can generate fluent text quickly, but detectors often look for statistical regularities." \
+  --device auto \
+  --guidance_classifier openai_roberta_base \
+  --deploy_classifier openai_roberta_base \
+  --adversarial 1
+```
+
+This local mode is for experimentation and debugging. It does not claim to reproduce the paper's full CUDA-scale setup on a MacBook.
+
+## ☁️ Colab
+
+A minimal Colab notebook is available at `notebooks/colab_minimal.ipynb`.
+
+- It auto-selects a safe runtime profile based on detected GPU memory
+- It is designed for single-text `text-in / text-out` runs
+- It uses conservative defaults for T4 / L4 / A100-class runtimes
+
+The notebook expects the patched Colab-friendly version of this repository. If you want to open it from GitHub in Colab, push this branch to your own fork first and update `REPO_URL` / `REPO_REF` in the notebook.
+
 
 ## 📦 Watermarked Datasets
 We covered two types of watermarks in our experiments:

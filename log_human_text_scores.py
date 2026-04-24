@@ -1,79 +1,60 @@
-import utils 
-from text_loader import *
+from __future__ import annotations
+
 import argparse
-import numpy as np
+
 from tqdm import tqdm
-from transformers import AutoTokenizer
+
+import utils
+from runtime_utils import LOCAL_DEPLOY_CLASSIFIER, save_jsonl
+from text_loader import load_initial_human_text
 
 
 def main(args):
-    human_texts = load_initial_human_text(num_samples=2000)
-
+    human_texts = load_initial_human_text(num_samples=args.num_samples)
     print("Loading deploy classifier...")
-    if args.deploy_classifier == "mage":
-        deploy_classifier = utils.MAGEDetector()
-    elif args.deploy_classifier == "openai_roberta_base" or args.deploy_classifier == "openai_roberta_large":
-        deploy_classifier = utils.OpenAIRoberta(model_name=args.deploy_classifier)
-    elif args.deploy_classifier == "radar":
-        deploy_classifier = utils.RADAR()
-    elif args.deploy_classifier == "kgw_wm":
-        from kgw_wm.extended_watermark_processor import WatermarkDetector
-        tokenizer = AutoTokenizer.from_pretrained(f"{args.hf_cache_dir}/Llama-3.1-8B-Instruct")
-        watermark_detector = WatermarkDetector(vocab=list(tokenizer.get_vocab().values()),
-                                        gamma=0.25, # should match original setting
-                                        seeding_scheme="selfhash", # should match original setting
-                                        device='cuda', # must match the original rng device type
-                                        tokenizer=tokenizer,
-                                        z_threshold=4.0,
-                                        normalizers=[],
-                                        ignore_repeated_ngrams=True)
-    elif args.deploy_classifier == 'uni_wm':
-        from uni_wm.extended_watermark_processor import WatermarkDetector
-        tokenizer = AutoTokenizer.from_pretrained(f"{args.hf_cache_dir}/Llama-3.1-8B-Instruct")
-        watermark_detector = WatermarkDetector(vocab=list(tokenizer.get_vocab().values()),
-                                        gamma=0.25, # should match original setting
-                                        seeding_scheme="unigram", # should match original setting
-                                        device='cuda', # must match the original rng device type
-                                        tokenizer=tokenizer,
-                                        z_threshold=4.0,
-                                        normalizers=[],
-                                        ignore_repeated_ngrams=True)
-    elif args.deploy_classifier == "fastdetectgpt" or args.deploy_classifier == "gltr":
-        from zs_detectors.detector import get_detector
-        deploy_classifier = get_detector(args.deploy_classifier)
+    deploy_classifier = utils.build_deploy_classifier(
+        classifier_name=args.deploy_classifier,
+        device=args.device,
+        hf_cache_dir=args.hf_cache_dir,
+        watermark_tokenizer=args.watermark_tokenizer,
+    )
 
     results = []
     for i in tqdm(range(0, len(human_texts), args.batch_size)):
-        batch_texts = human_texts[i: i+args.batch_size]
-        if args.deploy_classifier == "kgw_wm" or args.deploy_classifier == "uni_wm": # Watermark-based detectors
+        batch_texts = human_texts[i : i + args.batch_size]
+
+        if args.deploy_classifier in {"kgw_wm", "uni_wm"}:
             scores = []
-            for text in zip(batch_texts):
-                try:
-                    score_dict = watermark_detector.detect(text)
-                except:
-                    score_dict = {"z_score": -9999}
-                    # warnings.warn(f"Input '{i_t}' resulted in output '{o_t}'")
+            for text in batch_texts:
+                score_dict = deploy_classifier.detect(text)
                 scores.append(score_dict["z_score"])
-        elif args.deploy_classifier == "fastdetectgpt" or args.deploy_classifier == "gltr": # ZS detectors
+        elif args.deploy_classifier in {"fastdetectgpt", "gltr"}:
             scores = deploy_classifier.inference(batch_texts)
-        else: # NN-based classifiers
+        else:
             scores = deploy_classifier.get_scores(batch_texts)
 
         for idx, (text, score) in enumerate(zip(batch_texts, scores), start=i):
-            results.append({"id": idx, "text": text, "score": score})
-    
-    # Save results to json file
-    output_path = f"outputs/human_text_scores/data-mage_model-{args.deploy_classifier}.json"
-    utils.save_jsonl(output_path, results)    
+            results.append({"id": idx, "text": text, "score": float(score)})
+
+    output_path = f"outputs/human_text_scores/data-mage_model-{args.deploy_classifier}.jsonl"
+    save_jsonl(output_path, results)
+    print(f"Saved {len(results)} rows to {output_path}")
+
 
 if __name__ == "__main__":
-
-    parser = argparse.ArgumentParser()   
-    parser.add_argument("--hf_cache_dir", type=str, default="/fs/cml-scratch/yzcheng/cache2")
-    parser.add_argument("--paraphrased_texts_path", type=str, default="outputs/guided_generations_mage/adv/radar")
-    parser.add_argument("--deploy_classifier", type=str, choices=["mage", "openai_roberta_base", "openai_roberta_large","radar", "kgw_wm", "uni_wm", "fastdetectgpt", "gltr"], default="mage")
-    parser.add_argument("--batch_size", type=int, default=10)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--hf_cache_dir", type=str, default="")
+    parser.add_argument("--watermark_tokenizer", type=str, default="")
+    parser.add_argument(
+        "--deploy_classifier",
+        type=str,
+        choices=utils.DEPLOY_CLASSIFIER_CHOICES,
+        default=LOCAL_DEPLOY_CLASSIFIER,
+    )
+    parser.add_argument("--device", type=str, choices=["auto", "cpu", "mps", "cuda"], default="auto")
+    parser.add_argument("--batch_size", type=int, default=4)
+    parser.add_argument("--num_samples", type=int, default=2000)
     parser.add_argument("--debug", type=int, default=0)
     args = parser.parse_args()
-    print("*"*20, "\n", args, "\n", "*"*20, "\n")
+    print("*" * 20, "\n", args, "\n", "*" * 20, "\n")
     main(args)

@@ -1,0 +1,7 @@
+transformers
+datasets
+tqdm
+clean-text
+sentencepiece
+scipy
+accelerate
